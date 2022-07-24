@@ -1,0 +1,421 @@
+---
+title: "Android VS React"
+output: html_notebook
+---
+
+# Dataset
+
+```{r}
+dataset <- read.csv("dataset", header = TRUE, sep = ",")
+
+dataset <- dataset %>% 
+  mutate(Framework=replace(Framework, Framework=="Android Native SDK", "Android")) %>%
+  mutate(Framework=replace(Framework, Framework=="React Native", "React")) %>% 
+  as.data.frame()
+
+```
+
+# Boxplots
+
+```{r}
+library(ggplot2)
+library(dplyr)
+
+box_plot <- function(dep_variable) {
+  dep_variable <- enquo(dep_variable)
+  dp_str <- as_label(dep_variable)
+  
+   # Produce Boxplots and visually check for outliers
+  plot <- ggplot(dataset, aes(x = Framework, y = !!dep_variable, fill = Framework)) +
+    stat_boxplot(geom ="errorbar", width = 0.5) +
+    stat_summary(fun=mean, geom="point", shape=10, size=3.5, color="black") + 
+    # scale_y_log10() +
+    ggtitle("") + 
+    geom_boxplot(alpha=0.75) +
+    scale_fill_brewer(palette=6)+
+    theme_minimal()+
+    theme(legend.position="none")
+  
+  #ggsave(filename=paste("../../plots/boxplot-",dp_str,".pdf", sep = ""), plot=plot, dpi=300, width = 6, height = 6, units = "cm")  
+  
+  show(plot)
+}
+
+boxplot_no_outlier <- function(var_column, var, coef_out = 1.5) {
+  var <- enquo(var)
+  var_name <- as_label(var)
+  
+  min_out <- min(boxplot.stats(var_column, coef = coef_out)$out)
+  
+  dataset.out <- dataset %>%
+    select(!!var, Framework, Name) %>%
+    arrange(!!var) %>%
+    filter(!!var > min_out)
+  #show(dataset.out)
+
+  dataset.no_out <- dataset %>%
+    filter(!!var < min_out)
+
+  plot <- ggplot(dataset.no_out, aes(x = Framework, y = !!var, fill = Framework)) +
+    stat_boxplot(geom ="errorbar", width = 0.5) +
+    stat_summary(fun=mean, geom="point", shape=10, size=3.5, color="black") + 
+    ggtitle(var_name) + 
+    geom_boxplot(alpha=0.75) +
+    scale_fill_brewer(palette=6)+
+    theme_minimal()+
+    theme(legend.position="none")+
+    labs(title=var_name, x="", y="") +
+    theme(axis.text=element_text(size=16), axis.text.x = element_text(angle = 90, vjust = 0.5))
+   
+  show(plot)
+   
+  ggsave(filename=paste("plots/boxplot-", var_name, sep = ""), plot=plot, device="pdf", dpi=300, width = 6, units = "cm")  
+}
+
+names(dataset)
+
+# box_plot(Bugs)
+# box_plot(CodeSmell)
+# box_plot(Debt)
+# box_plot(Duplication)
+# box_plot(DuplicatedLines)
+# box_plot(DuplicatedBlocks)
+# box_plot(DuplicatedFiles)
+# box_plot(LinesOfCode)
+# box_plot(TotalLines)
+# box_plot(NumberOfStatements)
+# box_plot(NumberOfFunctions)
+# box_plot(NumberOfClasses)
+# box_plot(NumberOfFiles)
+# box_plot(CyclomaticComplexity)
+# box_plot(CognitiveComplexity)
+
+boxplot_no_outlier(dataset$Bugs, Bugs)
+boxplot_no_outlier(dataset$CodeSmell, CodeSmell)
+boxplot_no_outlier(dataset$Debt, Debt)
+boxplot_no_outlier(dataset$Duplication, Duplication)
+boxplot_no_outlier(dataset$DuplicatedLines, DuplicatedLines)
+boxplot_no_outlier(dataset$DuplicatedBlocks, DuplicatedBlocks)
+boxplot_no_outlier(dataset$DuplicatedFiles, DuplicatedFiles)
+boxplot_no_outlier(dataset$LinesOfCode, LinesOfCode)
+boxplot_no_outlier(dataset$TotalLines, TotalLines)
+boxplot_no_outlier(dataset$NumberOfStatements, NumberOfStatements)
+boxplot_no_outlier(dataset$NumberOfFunctions, NumberOfFunctions)
+boxplot_no_outlier(dataset$NumberOfClasses, NumberOfClasses)
+boxplot_no_outlier(dataset$NumberOfFiles, NumberOfFiles)
+boxplot_no_outlier(dataset$CyclomaticComplexity, CyclomaticComplexity)
+boxplot_no_outlier(dataset$CognitiveComplexity, CognitiveComplexity)
+
+```
+
+# Desc. Stats & Normality
+```{r}
+library("qqplotr")
+
+desc_stats <- function(dep_variable) {
+  # Produce descriptive statistics by group
+  dep_variable <- enquo(dep_variable)
+
+  tab_ds <- dataset %>% select(Framework, !!dep_variable)  %>% group_by(Framework) %>%
+    summarise(n = n(),
+              mean = round(mean(!!dep_variable, na.rm = TRUE), 2),
+              sd = round(sd(!!dep_variable, na.rm = TRUE), 2),
+              # stderr = sd/sqrt(n),
+              # LCL = mean - qt(1 - (0.05 / 2), n - 1) * stderr,
+              # UCL = mean + qt(1 - (0.05 / 2), n - 1) * stderr,
+              median = round(median(!!dep_variable, na.rm = TRUE), 2),
+              min = round(min(!!dep_variable, na.rm = TRUE), 2),
+              max = round(max(!!dep_variable, na.rm = TRUE),2))
+              # IQR = IQR(!!dep_variable, na.rm = TRUE))
+              # LCLmed = MedianCI(!!dep_variable, na.rm=TRUE)[2],
+              # UCLmed = MedianCI(!!dep_variable, na.rm=TRUE)[3])
+  
+  # write.csv(tab_ds, file = paste("../../tables/tab-", as_label(dep_variable), ".csv", sep = ""), append = TRUE)
+  return(tab_ds)
+}             
+
+# Test each group for normality
+test_normality <- function(dep_variable){
+  
+  dep_variable <- enquo(dep_variable)
+  dp_str <- as_label(dep_variable)
+  
+  # A p-value < 0.05 would indicate that we should reject the assumption of normality. 
+  shapiro <- dataset %>% group_by(Framework) %>%
+    summarise(`W Stat` = shapiro.test(!!dep_variable)$statistic,
+            p.value = shapiro.test(!!dep_variable)$p.value)
+  
+  # write.csv(shapiro, file = paste("../../tables/tab-norm-", dp_str, ".csv", sep = ""))
+  # write.csv(shapiro, file = paste("../../tables/tab-", as_label(dep_variable), ".csv", sep = ""), append = TRUE)
+  
+  # show(shapiro)
+
+  # Perform QQ plots by group
+  # As all the points fall approximately along this reference line, we can assume normality.
+  plot <- ggplot(data = dataset, mapping = aes(sample = !!dep_variable, color = Framework, fill = Framework)) +
+    stat_qq_band(alpha=0.5, conf=0.95, qtype=1, bandType = "boot") +
+    stat_qq_line(identity=TRUE) +
+    stat_qq_point(col="black") +
+    facet_wrap(~ Framework, scales = "free") +
+    labs(x = "Theoretical Quantiles", y = "Sample Quantiles") +
+    scale_fill_brewer(palette=6)+
+    theme_minimal() + theme(legend.position="none")
+  
+  # ggsave(filename=paste("../../plots/plot-norm-",dp_str,".pdf", sep = ""), plot=plot, dpi=300, units = "cm")  
+  
+  show(plot)
+  
+  return(shapiro$p.value)
+}
+
+ds <- data.frame(
+  desc_stats(Bugs),
+  normal_dist = ifelse(test_normality(Bugs) > 0.05, "Yes", "No")
+) %>% mutate(variable = "Bugs")
+write.table(x = ds, file = "tables/tab-desc-stats.csv", append = FALSE, sep = ",", fileEncoding = "UTF-8", row.names = FALSE, col.names = TRUE)
+
+ds <- data.frame(
+  desc_stats(CodeSmell),
+  normal_dist = ifelse(test_normality(CodeSmell) > 0.05, "Yes", "No")
+) %>% mutate(variable = "CodeSmell")
+write.table(x = ds, file = "tables/tab-desc-stats.csv", append = TRUE, sep = ",", fileEncoding = "UTF-8", row.names = FALSE, col.names = FALSE)
+
+ds <- data.frame(
+  desc_stats(Debt),
+  normal_dist = ifelse(test_normality(Debt) > 0.05, "Yes", "No")
+) %>% mutate(variable = "Debt")
+write.table(x = ds, file = "tables/tab-desc-stats.csv", append = TRUE, sep = ",", fileEncoding = "UTF-8", row.names = FALSE, col.names = FALSE)
+
+ds <- data.frame(
+  desc_stats(Duplication),
+  normal_dist = ifelse(test_normality(Duplication) > 0.05, "Yes", "No")
+) %>% mutate(variable = "Duplication")
+write.table(x = ds, file = "tables/tab-desc-stats.csv", append = TRUE, sep = ",", fileEncoding = "UTF-8", row.names = FALSE, col.names = FALSE)
+
+ds <- data.frame(
+  desc_stats(DuplicatedLines),
+  normal_dist = ifelse(test_normality(DuplicatedLines) > 0.05, "Yes", "No")
+) %>% mutate(variable = "DuplicatedLines")
+write.table(x = ds, file = "tables/tab-desc-stats.csv", append = TRUE, sep = ",", fileEncoding = "UTF-8", row.names = FALSE, col.names = FALSE)
+
+ds <- data.frame(
+  desc_stats(DuplicatedBlocks),
+  normal_dist = ifelse(test_normality(DuplicatedBlocks) > 0.05, "Yes", "No")
+) %>% mutate(variable = "DuplicatedBlocks")
+write.table(x = ds, file = "tables/tab-desc-stats.csv", append = TRUE, sep = ",", fileEncoding = "UTF-8", row.names = FALSE, col.names = FALSE)
+
+# DuplicatedFiles
+ds <- data.frame(
+  desc_stats(DuplicatedFiles),
+  normal_dist = ifelse(test_normality(DuplicatedFiles) > 0.05, "Yes", "No")
+) %>% mutate(variable = "DuplicatedFiles")
+write.table(x = ds, file = "tables/tab-desc-stats.csv", append = TRUE, sep = ",", fileEncoding = "UTF-8", row.names = FALSE, col.names = FALSE)
+
+# LinesOfCode
+ds <- data.frame(
+  desc_stats(LinesOfCode),
+  normal_dist = ifelse(test_normality(LinesOfCode) > 0.05, "Yes", "No")
+) %>% mutate(variable = "LinesOfCode")
+write.table(x = ds, file = "tables/tab-desc-stats.csv", append = TRUE, sep = ",", fileEncoding = "UTF-8", row.names = FALSE, col.names = FALSE)
+
+# TotalLines
+ds <- data.frame(
+  desc_stats(TotalLines),
+  normal_dist = ifelse(test_normality(TotalLines) > 0.05, "Yes", "No")
+) %>% mutate(variable = "TotalLines")
+write.table(x = ds, file = "tables/tab-desc-stats.csv", append = TRUE, sep = ",", fileEncoding = "UTF-8", row.names = FALSE, col.names = FALSE)
+
+# NumberOfStatements
+ds <- data.frame(
+  desc_stats(NumberOfStatements),
+  normal_dist = ifelse(test_normality(NumberOfStatements) > 0.05, "Yes", "No")
+) %>% mutate(variable = "NumberOfStatements")
+write.table(x = ds, file = "tables/tab-desc-stats.csv", append = TRUE, sep = ",", fileEncoding = "UTF-8", row.names = FALSE, col.names = FALSE)
+
+# NumberOfFunctions
+ds <- data.frame(
+  desc_stats(NumberOfFunctions),
+  normal_dist = ifelse(test_normality(NumberOfFunctions) > 0.05, "Yes", "No")
+) %>% mutate(variable = "NumberOfFunctions")
+write.table(x = ds, file = "tables/tab-desc-stats.csv", append = TRUE, sep = ",", fileEncoding = "UTF-8", row.names = FALSE, col.names = FALSE)
+
+# NumberOfClasses
+ds <- data.frame(
+  desc_stats(NumberOfClasses),
+  normal_dist = ifelse(test_normality(NumberOfClasses) > 0.05, "Yes", "No")
+) %>% mutate(variable = "NumberOfClasses")
+write.table(x = ds, file = "tables/tab-desc-stats.csv", append = TRUE, sep = ",", fileEncoding = "UTF-8", row.names = FALSE, col.names = FALSE)
+
+# NumberOfFiles
+ds <- data.frame(
+  desc_stats(NumberOfFiles),
+  normal_dist = ifelse(test_normality(NumberOfFiles) > 0.05, "Yes", "No")
+) %>% mutate(variable = "NumberOfFiles")
+write.table(x = ds, file = "tables/tab-desc-stats.csv", append = TRUE, sep = ",", fileEncoding = "UTF-8", row.names = FALSE, col.names = FALSE)
+
+# CyclomaticComplexity
+ds <- data.frame(
+  desc_stats(CyclomaticComplexity),
+  normal_dist = ifelse(test_normality(CyclomaticComplexity) > 0.05, "Yes", "No")
+) %>% mutate(variable = "CyclomaticComplexity")
+write.table(x = ds, file = "tables/tab-desc-stats.csv", append = TRUE, sep = ",", fileEncoding = "UTF-8", row.names = FALSE, col.names = FALSE)
+
+# CognitiveComplexity
+ds <- data.frame(
+  desc_stats(CognitiveComplexity),
+  normal_dist = ifelse(test_normality(CognitiveComplexity) > 0.05, "Yes", "No")
+) %>% mutate(variable = "CognitiveComplexity")
+write.table(x = ds, file = "tables/tab-desc-stats.csv", append = TRUE, sep = ",", fileEncoding = "UTF-8", row.names = FALSE, col.names = FALSE)
+
+
+
+```
+# Statistical Analisys
+
+```{r}
+library(rcompanion)
+
+mw <- function(dep_variable){
+  # Perform the Mann-Whitney U test
+  # The Wilcoxon test statistic is the sum of the ranks in sample 1 minus n1*(n1+1)/2. n1 is the number of observations in sample 1.
+  # A p-value < 0.05 indicates that we should reject the null hypothesis that distributions are equal and conclude that there is a significant difference between the samples regarding the variable (CC)
+  mw <- wilcox.test(dep_variable ~ Framework, data=dataset, na.rm=TRUE, paired=FALSE, exact=FALSE, conf.int=TRUE)
+  
+  print(data.frame(mw$p.value, mw$estimate))
+  # write.csv(data.frame(mw$p.value, mw$estimate), file = paste("../../tables/tab-", dp_str, ".csv", sep = ""), append = TRUE)
+  
+  # Hodges Lehmann Estimator
+  # The Hodges-Lehmann estimate more precisely indicates that we can expect a median of about 0.5 more CC for engines projects
+  # Thus the average of CC in functions in engines projects are greater that in frameworks projects
+  mw$estimate
+  
+  return(data.frame(mw$p.value, mw$estimate))
+}
+
+effect_size <- function(dep_variable){
+  # Effect size is a simple way of quantifying the difference between two groups. This is particularly important in experimentation, since it may be possible to show a statistical significant difference between two groups, but it may not be meaningful from a practical point of view. In most cases, it is possible to show statistically significant differences with a sufficiently large number of subjects in an experiment, but it does not necessarily mean that it is meaningful from a practical point of view. It may be the case that the difference is too small or the cost to exploit the difference is simply too high.
+  
+  # 0.10  – < 0.40 [small]
+	# 0.40  – < 0.60 [med]
+	# ≥ 0.60 [large]
+  
+  wilcoxon <- wilcoxonPairedR(x = dep_variable, g = dataset$Framework, histogram = TRUE)
+  
+  wil_str = ""
+  if(wilcoxon > 0.10 & wilcoxon < 0.40){
+    wil_str = "(small)"
+  } else if(wilcoxon > 0.40 & wilcoxon < 0.60) {
+    wil_str <- "(medium)"
+  } else {
+    wil_str <- "(large)"
+  }
+  return(paste(wilcoxon, wil_str))
+}
+
+# Bugs
+ds <- data.frame(
+  mw(dataset$Bugs),
+  effect_size(dataset$Bugs)
+) %>% mutate(variable = "Bugs")
+write.table(x = ds, file = "tables/tab-mw.csv", append = FALSE, sep = ",", fileEncoding = "UTF-8", row.names = FALSE, col.names = TRUE)
+
+# CodeSmell
+ds <- data.frame(
+  mw(dataset$CodeSmell),
+  effect_size(dataset$CodeSmell)
+) %>% mutate(variable = "CodeSmell")
+write.table(x = ds, file = "tables/tab-mw.csv", append = TRUE, sep = ",", fileEncoding = "UTF-8", row.names = FALSE, col.names = FALSE)
+
+# Debt
+ds <- data.frame(
+  mw(dataset$Debt),
+  effect_size(dataset$Debt)
+) %>% mutate(variable = "Debt")
+write.table(x = ds, file = "tables/tab-mw.csv", append = TRUE, sep = ",", fileEncoding = "UTF-8", row.names = FALSE, col.names = FALSE)
+
+# DuplicatedLines
+ds <- data.frame(
+  mw(dataset$DuplicatedLines),
+  effect_size(dataset$DuplicatedLines)
+) %>% mutate(variable = "DuplicatedLines")
+write.table(x = ds, file = "tables/tab-mw.csv", append = TRUE, sep = ",", fileEncoding = "UTF-8", row.names = FALSE, col.names = FALSE)
+
+# DuplicatedBlocks
+ds <- data.frame(
+  mw(dataset$DuplicatedBlocks),
+  effect_size(dataset$DuplicatedBlocks)
+) %>% mutate(variable = "DuplicatedBlocks")
+write.table(x = ds, file = "tables/tab-mw.csv", append = TRUE, sep = ",", fileEncoding = "UTF-8", row.names = FALSE, col.names = FALSE)
+
+# DuplicatedFiles
+ds <- data.frame(
+  mw(dataset$DuplicatedFiles),
+  effect_size(dataset$DuplicatedFiles)
+) %>% mutate(variable = "DuplicatedFiles")
+write.table(x = ds, file = "tables/tab-mw.csv", append = TRUE, sep = ",", fileEncoding = "UTF-8", row.names = FALSE, col.names = FALSE)
+
+# LinesOfCode
+ds <- data.frame(
+  mw(dataset$LinesOfCode),
+  effect_size(dataset$LinesOfCode)
+) %>% mutate(variable = "LinesOfCode")
+write.table(x = ds, file = "tables/tab-mw.csv", append = TRUE, sep = ",", fileEncoding = "UTF-8", row.names = FALSE, col.names = FALSE)
+
+# TotalLines
+ds <- data.frame(
+  mw(dataset$TotalLines),
+  effect_size(dataset$TotalLines)
+) %>% mutate(variable = "TotalLines")
+write.table(x = ds, file = "tables/tab-mw.csv", append = TRUE, sep = ",", fileEncoding = "UTF-8", row.names = FALSE, col.names = FALSE)
+
+# NumberOfStatements
+ds <- data.frame(
+  mw(dataset$NumberOfStatements),
+  effect_size(dataset$NumberOfStatements)
+) %>% mutate(variable = "NumberOfStatements")
+write.table(x = ds, file = "tables/tab-mw.csv", append = TRUE, sep = ",", fileEncoding = "UTF-8", row.names = FALSE, col.names = FALSE)
+
+# NumberOfFunctions
+ds <- data.frame(
+  mw(dataset$NumberOfFunctions),
+  effect_size(dataset$NumberOfFunctions)
+) %>% mutate(variable = "NumberOfFunctions")
+write.table(x = ds, file = "tables/tab-mw.csv", append = TRUE, sep = ",", fileEncoding = "UTF-8", row.names = FALSE, col.names = FALSE)
+
+# NumberOfClasses
+ds <- data.frame(
+  mw(dataset$NumberOfClasses),
+  effect_size(dataset$NumberOfClasses)
+) %>% mutate(variable = "NumberOfClasses")
+write.table(x = ds, file = "tables/tab-mw.csv", append = TRUE, sep = ",", fileEncoding = "UTF-8", row.names = FALSE, col.names = FALSE)
+
+# NumberOfFiles
+ds <- data.frame(
+  mw(dataset$NumberOfFiles),
+  effect_size(dataset$NumberOfFiles)
+) %>% mutate(variable = "NumberOfFiles")
+write.table(x = ds, file = "tables/tab-mw.csv", append = TRUE, sep = ",", fileEncoding = "UTF-8", row.names = FALSE, col.names = FALSE)
+
+# CyclomaticComplexity
+ds <- data.frame(
+  mw(dataset$CyclomaticComplexity),
+  effect_size(dataset$CyclomaticComplexity)
+) %>% mutate(variable = "CyclomaticComplexity")
+write.table(x = ds, file = "tables/tab-mw.csv", append = TRUE, sep = ",", fileEncoding = "UTF-8", row.names = FALSE, col.names = FALSE)
+
+# CognitiveComplexity
+ds <- data.frame(
+  mw(dataset$CognitiveComplexity),
+  effect_size(dataset$CognitiveComplexity)
+) %>% mutate(variable = "CognitiveComplexity")
+write.table(x = ds, file = "tables/tab-mw.csv", append = TRUE, sep = ",", fileEncoding = "UTF-8", row.names = FALSE, col.names = FALSE)
+
+```
+* A p-value < 0.05 conclude that there is a significant difference between the samples regarding the variable.
+* `NumberOfClasses` and `NumberOfFiles` are largely similar among the Frameworks.
+* The remaining variables are considered different.
+
+
+
+
+
